@@ -51,17 +51,72 @@ function standardize(x) {
 /***********************
  * UI HANDLER
  ***********************/
-document.getElementById("predict-form").addEventListener("submit", (e) => {
-  e.preventDefault();
+/***********************
+ * CSV PROCESSING
+ ***********************/
 
-  const x = FEATURE_NAMES.map(name => {
-    const el = document.querySelector(`[name="${name}"]`);
-    return Number(el.value);
-  });
-
+// Helper to handle prediction for a single array of 30 features
+function predict(x) {
+  // We expect exactly 30 features for the model
+  if (x.length !== 30) return null;
   const xScaled = standardize(x);
   const z = dot(xScaled, W) + B;
-  const p = sigmoid(z);
+  return sigmoid(z);
+}
+
+document.getElementById("csv-file").addEventListener("change", function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const text = event.target.result;
+    const lines = text.trim().split("\n");
+    
+    // Skip header row if the first cell of the first line is "id"
+    const startLine = lines[0].toLowerCase().startsWith("id") ? 1 : 0;
+    
+    let resultsHtml = "<h3>Batch Results</h3><div class='batch-results'>";
+    
+    for (let i = startLine; i < lines.length; i++) {
+      const allValues = lines[i].split(",");
+      
+      // Extract the metadata (ID and Diagnosis) for display
+      const patientId = allValues[0];
+      const actualDiagnosis = allValues[1]; // M or B
+      
+      // Extract columns 3 through 32 (the 30 numerical features)
+      const features = allValues.slice(2).map(Number);
+      
+      const p = predict(features);
+      
+      if (p !== null) {
+        const status = p >= 0.5 ? "⚠️ Benign" : "✅ Malignant";
+        const isCorrect = (actualDiagnosis === "B" && p >= 0.5) || (actualDiagnosis === "M" && p < 0.5);
+        
+        resultsHtml += `
+          <div class="result-row" style="border-left: 4px solid ${isCorrect ? '#4caf50' : '#f44336'}">
+            <span>
+              <strong>ID: ${patientId}</strong> | 
+              Predicted: <b>${status}</b> (${(p * 100).toFixed(1)}%) | 
+              Actual: <b>${actualDiagnosis}</b>
+            </span>
+          </div>`;
+      }
+    }
+    
+    resultsHtml += "</div>";
+    document.getElementById("result").innerHTML = resultsHtml;
+  };
+  
+  reader.readAsText(file);
+});
+
+// Update existing form listener to use the predict helper
+document.getElementById("predict-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const x = FEATURE_NAMES.map(name => Number(document.querySelector(`[name="${name}"]`).value));
+  const p = predict(x);
 
   document.getElementById("result").innerHTML = `
     <div class="card">
